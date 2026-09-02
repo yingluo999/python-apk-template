@@ -17,25 +17,30 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
     - name: 检出代码
       uses: actions/checkout@v4
+
     - name: 安装系统依赖
       run: |
         sudo apt-get update
-        sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
+        sudo apt-get install -y \
+          git zip unzip openjdk-17-jdk \
+          python3-pip autoconf libtool \
+          pkg-config zlib1g-dev \
+          libncurses5-dev libncursesw5-dev \
+          cmake libffi-dev libssl-dev
+
     - name: 安装 Buildozer
       run: |
         pip3 install --upgrade pip
         pip3 install buildozer cython
-    - name: 下载中文字体
-      run: |
-        mkdir -p fonts
-        cd fonts
-        wget -O NotoSansCJK-Regular.ttf https://github.com/googlefonts/noto-cjk/raw/main/Sans/SubsetOTF/NotoSansCJK-Regular.ttf || true
+
     - name: 构建 APK
       run: |
         buildozer android ${{ github.event.inputs.build_type || 'debug' }} --verbose
+
     - name: 上传 APK
       uses: actions/upload-artifact@v4
       with:
