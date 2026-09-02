@@ -37,11 +37,12 @@ jobs:
         pip3 install --upgrade pip
         pip3 install buildozer cython
 
-    - name: 接受 SDK 许可证
+    - name: 接受所有 SDK 许可证
       run: |
         mkdir -p ~/.android
         echo "### User Sources for Android SDK Manager" > ~/.android/repositories.cfg
-        yes | sdkmanager --licenses || true
+        echo "y" | sdkmanager --licenses --sdk_root=/home/runner/.buildozer/android/platform/android-sdk || true
+        echo "y" | sdkmanager "build-tools;30.0.3" "platforms;android-30" || true
 
     - name: 构建 APK
       run: |
