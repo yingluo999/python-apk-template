@@ -13,13 +13,36 @@ jobs:
     - name: 检出代码
       uses: actions/checkout@v4
 
-    - name: 使用 Docker 构建 APK
+    - name: 安装系统依赖
       run: |
-        docker run --rm \
-          -v $(pwd):/app \
-          -w /app \
-          kivy/buildozer:latest \
-          buildozer android debug
+        sudo apt-get update
+        sudo apt-get install -y \
+          git zip unzip openjdk-17-jdk \
+          python3-pip autoconf libtool \
+          pkg-config zlib1g-dev \
+          libncurses5-dev libncursesw5-dev \
+          cmake libffi-dev libssl-dev
+
+    - name: 安装 Buildozer
+      run: |
+        pip3 install --upgrade pip
+        pip3 install buildozer cython
+
+    - name: 设置 Android SDK
+      run: |
+        # 下载 sdkmanager
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        unzip -q commandlinetools-linux-9477386_latest.zip
+        mkdir -p ~/.buildozer/android/platform/android-sdk
+        cp -r cmdline-tools ~/.buildozer/android/platform/android-sdk/
+
+        # 接受许可证
+        export ANDROID_SDK_ROOT=~/.buildozer/android/platform/android-sdk
+        echo "y" | ~/.buildozer/android/platform/android-sdk/cmdline-tools/bin/sdkmanager --licenses || true
+
+    - name: 构建 APK
+      run: |
+        echo "y" | buildozer android debug
 
     - name: 上传 APK
       uses: actions/upload-artifact@v4
