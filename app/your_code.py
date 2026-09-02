@@ -4,225 +4,367 @@ import string
 import time
 import re
 import os
+from typing import Optional, Tuple
+from urllib.parse import quote
 
 
-def generate_phone():
-    cmcc = ['134','135','136','137','138','139','147','148','150','151','152',
-            '157','158','159','172','178','182','183','184','187','188','195','197','198']
-    cucc = ['130','131','132','145','146','155','156','166','167','175','176','185','186','196']
-    ctcc = ['133','149','153','162','173','174','177','180','181','189','191','193','199']
-    all_prefixes = cmcc * 5 + cucc * 3 + ctcc * 2
-    for _ in range(10):
-        prefix = random.choice(all_prefixes)
-        suffix = ''.join(random.choices(string.digits, k=8))
-        phone = prefix + suffix
-        if not any(p in phone for p in ['123456', '111111', '000000', '888888']):
-            return phone
-    return '138' + ''.join(random.choices(string.digits, k=8))
-
-
-def generate_password():
-    length = random.randint(8, 12)
-    chars = string.ascii_letters + string.digits
-    pwd = [random.choice(string.ascii_letters), random.choice(string.digits)]
-    pwd += random.choices(chars, k=length-2)
-    random.shuffle(pwd)
-    return ''.join(pwd)
-
-
-def generate_name():
-    surnames = ['王','李','张','刘','陈','杨','黄','赵','吴','周','徐','孙','马','朱','胡','郭','林','何','高','罗']
-    given = ['伟','芳','娜','敏','静','丽','强','磊','洋','勇','艳','杰','倩','涛','明','超','秀英','华','慧','建']
-    return random.choice(surnames) + random.choice(given)
-
-
-class ZodiacRegister:
-    def __init__(self, base_url="http://app.wanshengxiao.cn"):
+class ZodiacBot:
+    def __init__(self, base_url: str = "http://app.wanshengxiao.cn"):
         self.base_url = base_url
-        self.session = requests.Session()
-        self.session.headers.update({
+        self.session = None
+        self.sdcard_path = self.get_sdcard_path()
+        self.account_file = os.path.join(self.sdcard_path, '十二生肖注册账号列表.txt')
+        print(f"📁 存储路径: {self.sdcard_path}")
+    
+    def get_sdcard_path(self) -> str:
+        possible_paths = ['/sdcard/', '/storage/emulated/0/', '/storage/sdcard0/', '/mnt/sdcard/']
+        for path in possible_paths:
+            if os.path.exists(path):
+                app_dir = os.path.join(path, '十二生肖账号')
+                try:
+                    if not os.path.exists(app_dir):
+                        os.makedirs(app_dir)
+                    test_file = os.path.join(app_dir, '.test')
+                    with open(test_file, 'w') as f:
+                        f.write('test')
+                    os.remove(test_file)
+                    return app_dir
+                except:
+                    continue
+        fallback_dir = os.path.join(os.getcwd(), '十二生肖账号')
+        if not os.path.exists(fallback_dir):
+            os.makedirs(fallback_dir)
+        return fallback_dir
+    
+    def create_session(self):
+        session = requests.Session()
+        session.headers.update({
             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
             'Accept': 'application/json, text/javascript, */*; q=0.01',
             'X-Requested-With': 'XMLHttpRequest',
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 15; V2425A) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.7827.159 Mobile Safari/537.36',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Origin': self.base_url,
+            'Referer': f'{self.base_url}/sx/app.html',
+            'User-Agent': random.choice([
+                'Mozilla/5.0 (Linux; Android 15; V2425A) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.7827.159 Mobile Safari/537.36',
+                'Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7128.145 Mobile Safari/537.36',
+                'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+                'Mozilla/5.0 (Linux; Android 13; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.6549.124 Mobile Safari/537.36',
+            ])
         })
+        return session
     
-    def register_one(self, ref_code, log=None):
-        """注册一个账号"""
-        phone = generate_phone()
-        password = generate_password()
-        name = generate_name()
-        alipay = phone
-        
-        if log:
-            log(f"📱 手机: {phone} | 密码: {password}")
-            log(f"👤 姓名: {name} | 支付宝: {alipay}")
-        
-        # 获取验证码
-        sms = self._get_sms(phone, log)
-        if not sms:
-            if log: log("❌ 获取验证码失败")
-            return False
-        
-        # 注册
-        success, msg = self._register(phone, password, name, sms, ref_code, log)
-        if not success:
-            if log: log(f"❌ {msg}")
-            return False
-        if log: log(f"✅ {msg}")
-        
-        # 登录
-        success, session = self._login(phone, password, log)
-        if not success:
-            if log: log("❌ 登录失败")
-            return False
-        
-        # 绑定支付宝
-        success, msg = self._bind_alipay(session, name, alipay, log)
-        if success:
-            if log: log(f"✅ {msg}")
+    def generate_realistic_phone(self) -> str:
+        cmcc = ['134','135','136','137','138','139','147','148','150','151','152',
+                '157','158','159','172','178','182','183','184','187','188','195','197','198']
+        cucc = ['130','131','132','145','146','155','156','166','167','175','176','185','186','196']
+        ctcc = ['133','149','153','162','173','174','177','180','181','189','191','193','199']
+        virtual = ['170','171']
+        all_prefixes = cmcc * 5 + cucc * 3 + ctcc * 2 + virtual
+        for _ in range(10):
+            prefix = random.choice(all_prefixes)
+            suffix = ''.join(random.choices(string.digits, k=8))
+            phone = prefix + suffix
+            if not any(p in phone for p in ['123456', '111111', '000000', '888888']):
+                return phone
+        return '138' + ''.join(random.choices(string.digits, k=8))
+    
+    def generate_password(self) -> str:
+        length = random.randint(8, 12)
+        letters = string.ascii_letters
+        digits = string.digits
+        all_chars = letters + digits
+        password = [random.choice(letters), random.choice(digits)]
+        password += random.choices(all_chars, k=length-2)
+        random.shuffle(password)
+        return ''.join(password)
+    
+    def generate_realname(self) -> str:
+        surnames = ['王','李','张','刘','陈','杨','黄','赵','吴','周','徐','孙','马','朱','胡',
+                    '郭','林','何','高','罗','郑','梁','谢','宋','唐','许','韩','冯','邓','曹',
+                    '彭','曾','萧','田','董','潘','袁','蔡','蒋','余','于','叶','杜','苏','魏']
+        given_names = ['伟','芳','娜','敏','静','丽','强','磊','洋','勇','艳','杰','倩','涛','明',
+                      '超','秀英','华','慧','建','文','平','刚','桂英','志强','秀兰','建国','建军',
+                      '浩','然','宇','轩','瑞','晨','曦','瑶','琪','琳','博','文','昊','天','奕']
+        surname = random.choice(surnames)
+        if random.random() > 0.3:
+            given = random.choice(given_names)
         else:
-            if log: log(f"❌ {msg}")
-        
-        # 保存
-        self._save_account(phone, password, name, alipay, log)
+            given = random.choice(given_names) + random.choice(given_names)
+        return surname + given
+    
+    def get_sms_code(self, session, phone):
+        print(f"\n  📱 验证手机: {phone}")
+        ops = ['+', '-', '×']
+        op = random.choice(ops)
+        if op == '+':
+            n1, n2 = random.randint(1, 9), random.randint(1, 9)
+            ans = n1 + n2
+            print(f"  🧮 数学验证: {n1} + {n2} = ? → {ans}")
+        elif op == '-':
+            n1 = random.randint(5, 10)
+            n2 = random.randint(1, n1 - 1)
+            ans = n1 - n2
+            print(f"  🧮 数学验证: {n1} - {n2} = ? → {ans}")
+        else:
+            n1, n2 = random.randint(1, 5), random.randint(1, 5)
+            ans = n1 * n2
+            print(f"  🧮 数学验证: {n1} × {n2} = ? → {ans}")
+        time.sleep(random.uniform(0.3, 0.8))
+        img_code = ''.join(random.choices(string.digits, k=4))
+        print(f"  🖼️  图形验证码: {img_code}")
+        time.sleep(random.uniform(0.3, 0.8))
+        url = f"{self.base_url}/user/reg_sms"
+        data = {'phone': phone}
+        time.sleep(random.uniform(0.5, 1.0))
+        try:
+            response = session.post(url, data=data, timeout=10)
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('status') == 1:
+                    code_match = re.search(r'\b(\d{6})\b', result.get('info', ''))
+                    if code_match:
+                        sms_code = code_match.group(1)
+                        print(f"  ✅ 验证码: {sms_code}")
+                        return sms_code
+            return None
+        except Exception as e:
+            print(f"  ❌ 异常: {e}")
+            return None
+    
+    def register_account(self, phone, password, realname, ref_code="125872"):
+        session = self.create_session()
+        sms_code = self.get_sms_code(session, phone)
+        if not sms_code:
+            return False, "获取验证码失败", None
+        url = f"{self.base_url}/user/reg"
+        data = {'username': phone, 'pwd': password, 'realname': realname,
+                'phone_code': sms_code, 'ref': ref_code}
+        time.sleep(random.uniform(0.3, 0.8))
+        try:
+            response = session.post(url, data=data, timeout=10)
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('status') == 1:
+                    return True, "注册成功", session
+                else:
+                    return False, result.get('info', '未知错误'), None
+            return False, f"HTTP {response.status_code}", None
+        except Exception as e:
+            return False, str(e), None
+    
+    def login(self, phone, password):
+        session = self.create_session()
+        url = f"{self.base_url}/user/login"
+        data = {'username': phone, 'pwd': password}
+        try:
+            response = session.post(url, data=data, timeout=10)
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('status') == 1:
+                    return True, session, "登录成功"
+                else:
+                    return False, session, result.get('info', '登录失败')
+            return False, session, f"HTTP {response.status_code}"
+        except Exception as e:
+            return False, session, str(e)
+    
+    def bind_alipay(self, session, realname, alipay):
+        url = f"{self.base_url}/user/info"
+        data = {'realname': realname, 'alipay': alipay, 'type': 'alipay'}
+        session.headers.update({
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9',
+            'Referer': f'{self.base_url}/user/info',
+            'Upgrade-Insecure-Requests': '1',
+        })
+        try:
+            response = session.post(url, data=data, timeout=10)
+            if response.status_code == 200:
+                try:
+                    result = response.json()
+                    if result.get('status') == 1:
+                        return True, "绑定成功"
+                    else:
+                        return False, result.get('info', '绑定失败')
+                except:
+                    html = response.text
+                    if '修改成功' in html or '成功' in html:
+                        return True, "绑定成功"
+                    else:
+                        return False, "绑定失败"
+            return False, f"HTTP {response.status_code}"
+        except Exception as e:
+            return False, str(e)
+    
+    def logout(self, session):
+        if not session:
+            return False, "没有登录会话"
+        url = f"{self.base_url}/user/logout.html"
+        session.headers.update({
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9',
+            'Referer': f'{self.base_url}/index/index.html',
+            'Upgrade-Insecure-Requests': '1',
+        })
+        try:
+            response = session.get(url, timeout=10)
+            if response.status_code == 200:
+                try:
+                    result = response.json()
+                    if result.get('status') == 1:
+                        return True, "退出成功"
+                    else:
+                        return False, result.get('info', '退出失败')
+                except:
+                    if '退出成功' in response.text:
+                        return True, "退出成功"
+                    else:
+                        return False, "退出失败"
+            return False, f"HTTP {response.status_code}"
+        except Exception as e:
+            return False, str(e)
+    
+    def save_account(self, phone, password, realname="", alipay=""):
+        timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+        file_exists = os.path.exists(self.account_file)
+        if os.path.exists(self.account_file):
+            with open(self.account_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                for i, line in enumerate(lines):
+                    if phone in line and line.startswith(('1', '2', '3', '4', '5', '6', '7', '8', '9')):
+                        parts = line.strip().split('\t')
+                        if len(parts) >= 4:
+                            seq = parts[0]
+                            new_line = f"{seq}\t{phone}\t{password}\t{timestamp}\t{realname}\t{alipay}\n"
+                            lines[i] = new_line
+                            with open(self.account_file, 'w', encoding='utf-8') as fw:
+                                fw.writelines(lines)
+                            print(f"💾 已更新账号信息: {phone}")
+                            return
+        with open(self.account_file, 'a', encoding='utf-8') as f:
+            if not file_exists:
+                f.write("=" * 80 + "\n")
+                f.write("🐉 十二生肖注册账号列表\n")
+                f.write(f"创建时间: {timestamp}\n")
+                f.write("=" * 80 + "\n")
+                f.write("序号\t手机号\t\t密码\t\t注册时间\t\t真实姓名\t支付宝账号\n")
+                f.write("-" * 80 + "\n")
+            with open(self.account_file, 'r', encoding='utf-8') as check:
+                lines = check.readlines()
+                account_lines = [l for l in lines if l.strip() and not l.startswith('=') 
+                                and not l.startswith('🐉') and not l.startswith('创建时间')
+                                and not l.startswith('序号') and not l.startswith('-')]
+                seq = len(account_lines) + 1
+            f.write(f"{seq}\t{phone}\t{password}\t{timestamp}\t{realname}\t{alipay}\n")
+        print(f"💾 已保存到文件: {phone}")
+    
+    def register_one(self, ref_code="125872"):
+        phone = self.generate_realistic_phone()
+        password = self.generate_password()
+        realname = self.generate_realname()
+        alipay = phone
+        print(f"\n📋 生成信息:")
+        print(f"  手机号: {phone}")
+        print(f"  密码: {password}")
+        print(f"  姓名: {realname}")
+        print(f"  支付宝: {alipay}")
+        print("\n📌 步骤1: 注册账号")
+        success, msg, session = self.register_account(phone, password, realname, ref_code)
+        if not success:
+            print(f"❌ 注册失败: {msg}")
+            return False
+        print(f"✅ {msg}")
+        print("\n📌 步骤2: 登录账号")
+        success, session, msg = self.login(phone, password)
+        if not success:
+            print(f"❌ 登录失败: {msg}")
+            return False
+        print("\n📌 步骤3: 绑定支付宝")
+        print(f"  姓名: {realname}")
+        print(f"  支付宝: {alipay}")
+        success, msg = self.bind_alipay(session, realname, alipay)
+        if success:
+            print(f"✅ {msg}")
+            self.save_account(phone, password, realname, alipay)
+        else:
+            print(f"❌ 绑定失败: {msg}")
+            self.save_account(phone, password, realname)
+        print("\n📌 步骤4: 退出登录")
+        success, msg = self.logout(session)
+        if success:
+            print(f"✅ {msg}")
+        else:
+            print(f"❌ {msg}")
         return True
     
-    def _get_sms(self, phone, log=None):
-        """获取验证码"""
-        if log: log(f"📱 验证手机: {phone}")
-        # 模拟数学验证
-        n1, n2 = random.randint(1, 9), random.randint(1, 9)
-        if log: log(f"  🧮 验证: {n1} + {n2} = {n1+n2}")
-        time.sleep(0.5)
-        # 模拟图形验证码
-        img = ''.join(random.choices(string.digits, k=4))
-        if log: log(f"  🖼️ 验证码: {img}")
-        time.sleep(0.5)
-        
+    def batch_register(self):
+        print("\n" + "=" * 55)
+        print("🐉 批量注册并绑定支付宝")
+        print("=" * 55)
         try:
-            r = self.session.post(f"{self.base_url}/user/reg_sms", {'phone': phone}, timeout=10)
-            if r.status_code == 200:
-                data = r.json()
-                if data.get('status') == 1:
-                    code = re.search(r'\b(\d{6})\b', data.get('info', ''))
-                    if code:
-                        if log: log(f"  ✅ 验证码: {code.group(1)}")
-                        return code.group(1)
-            return None
+            count = int(input("请输入要注册的数量: ").strip())
+            if count <= 0:
+                print("❌ 数量必须大于0")
+                return
         except:
-            return None
+            print("❌ 请输入有效数字")
+            return
+        ref = input("请输入推荐码 (默认125872): ").strip() or "125872"
+        print(f"\n📌 准备注册 {count} 个账号")
+        print("=" * 55)
+        success_count = 0
+        fail_count = 0
+        for i in range(count):
+            print(f"\n{'='*55}")
+            print(f"🐉 第 {i+1}/{count} 个账号")
+            print(f"{'='*55}")
+            if self.register_one(ref):
+                success_count += 1
+            else:
+                fail_count += 1
+            if i < count - 1:
+                delay = random.uniform(2, 5)
+                print(f"\n⏳ 等待 {delay:.1f} 秒...")
+                time.sleep(delay)
+        print("\n" + "=" * 55)
+        print("📊 注册完成统计:")
+        print(f"  成功: {success_count} 个")
+        print(f"  失败: {fail_count} 个")
+        print(f"  总计: {count} 个")
+        print(f"📁 账号已保存到: {self.account_file}")
+        print("=" * 55)
     
-    def _register(self, phone, password, name, sms, ref, log=None):
-        """注册"""
-        try:
-            r = self.session.post(f"{self.base_url}/user/reg", {
-                'username': phone, 'pwd': password, 'realname': name,
-                'phone_code': sms, 'ref': ref
-            }, timeout=10)
-            if r.status_code == 200:
-                data = r.json()
-                if data.get('status') == 1:
-                    return True, "注册成功"
-                return False, data.get('info', '注册失败')
-            return False, f"HTTP {r.status_code}"
-        except Exception as e:
-            return False, str(e)
-    
-    def _login(self, phone, password, log=None):
-        """登录"""
-        try:
-            r = self.session.post(f"{self.base_url}/user/login", {
-                'username': phone, 'pwd': password
-            }, timeout=10)
-            if r.status_code == 200:
-                data = r.json()
-                if data.get('status') == 1:
-                    return True, self.session
-                return False, None
-            return False, None
-        except:
-            return False, None
-    
-    def _bind_alipay(self, session, name, alipay, log=None):
-        """绑定支付宝"""
-        try:
-            session.headers.update({
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9',
-                'Referer': f'{self.base_url}/user/info',
-            })
-            r = session.post(f"{self.base_url}/user/info", {
-                'realname': name, 'alipay': alipay, 'type': 'alipay'
-            }, timeout=10)
-            if r.status_code == 200:
-                try:
-                    data = r.json()
-                    if data.get('status') == 1:
-                        return True, "绑定成功"
-                    return False, data.get('info', '绑定失败')
-                except:
-                    if '修改成功' in r.text or '成功' in r.text:
-                        return True, "绑定成功"
-                    return False, "绑定失败"
-            return False, f"HTTP {r.status_code}"
-        except Exception as e:
-            return False, str(e)
-    
-    def _save_account(self, phone, password, name, alipay, log=None):
-        """保存账号"""
-        timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-        # 获取SD卡路径
-        sdcard = '/sdcard/'
-        if os.path.exists('/storage/emulated/0/'):
-            sdcard = '/storage/emulated/0/'
-        elif os.path.exists('/storage/sdcard0/'):
-            sdcard = '/storage/sdcard0/'
-        
-        account_dir = os.path.join(sdcard, '十二生肖账号')
-        try:
-            os.makedirs(account_dir, exist_ok=True)
-        except:
-            account_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '十二生肖账号')
-            os.makedirs(account_dir, exist_ok=True)
-        
-        account_file = os.path.join(account_dir, '十二生肖注册账号列表.txt')
-        
-        try:
-            with open(account_file, 'a', encoding='utf-8') as f:
-                # 检查文件是否为空
-                if os.path.getsize(account_file) == 0:
-                    f.write("=" * 80 + "\n")
-                    f.write("🐉 十二生肖注册账号列表\n")
-                    f.write(f"创建时间: {timestamp}\n")
-                    f.write("=" * 80 + "\n")
-                    f.write("序号\t手机号\t\t密码\t\t注册时间\t\t真实姓名\t支付宝账号\n")
-                    f.write("-" * 80 + "\n")
-                
-                # 计算序号
-                with open(account_file, 'r', encoding='utf-8') as check:
-                    lines = check.readlines()
-                    account_lines = [l for l in lines if l.strip() and not l.startswith('=') 
-                                    and not l.startswith('🐉') and not l.startswith('创建时间')
-                                    and not l.startswith('序号') and not l.startswith('-')]
-                    seq = len(account_lines) + 1
-                
-                f.write(f"{seq}\t{phone}\t{password}\t{timestamp}\t{name}\t{alipay}\n")
-            
-            if log: log(f"💾 已保存: {account_file}")
-        except Exception as e:
-            if log: log(f"⚠️ 保存失败: {e}")
+    def main_menu(self):
+        while True:
+            print("\n" + "🐉" * 12 + " 十二生肖机器人 " + "🐉" * 12)
+            print("=" * 55)
+            print("  1. 🚀 注册一个账号")
+            print("  2. 📦 批量注册账号")
+            print("  0. 退出程序")
+            print("=" * 55)
+            choice = input("请选择功能: ").strip()
+            if choice == '1':
+                ref = input("请输入推荐码 (默认125872): ").strip() or "125872"
+                self.register_one(ref)
+            elif choice == '2':
+                self.batch_register()
+            elif choice == '0':
+                print("👋 再见!")
+                break
+            else:
+                print("❌ 无效选择，请重新输入")
 
 
-# ========== APP 入口函数（必须保留） ==========
+# ========== APP 入口（必须保留） ==========
 def batch_register(ref_code: str, count: int, log_callback=None):
-    """
-    批量注册 - APP 调用的入口函数
-    """
-    register = ZodiacRegister()
+    """批量注册 - APP 调用的入口函数"""
+    bot = ZodiacBot()
     
     if log_callback:
         log_callback(f"📌 注册 {count} 个账号 | 推荐码: {ref_code}")
+        log_callback(f"📁 保存: {bot.account_file}")
     
     success = 0
     for i in range(count):
@@ -231,7 +373,24 @@ def batch_register(ref_code: str, count: int, log_callback=None):
             log_callback(f"🐉 第 {i+1}/{count} 个")
             log_callback(f"{'='*55}")
         
-        if register.register_one(ref_code, log_callback):
+        # 重定向 print 到 log_callback
+        import sys
+        from io import StringIO
+        
+        old_stdout = sys.stdout
+        sys.stdout = StringIO()
+        
+        result = bot.register_one(ref_code)
+        
+        output = sys.stdout.getvalue()
+        sys.stdout = old_stdout
+        
+        if log_callback:
+            for line in output.strip().split('\n'):
+                if line.strip():
+                    log_callback(line)
+        
+        if result:
             success += 1
         
         if i < count - 1:
@@ -249,5 +408,9 @@ def batch_register(ref_code: str, count: int, log_callback=None):
 
 
 def run(args=None):
-    """兼容旧版入口"""
     return "请使用APP界面操作"
+
+
+if __name__ == "__main__":
+    bot = ZodiacBot()
+    bot.main_menu()
