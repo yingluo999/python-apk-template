@@ -1,83 +1,44 @@
 name: Build APK
 
 on:
+  push:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       build_type:
         description: '构建类型'
         required: true
-        default: 'release'
+        default: 'debug'
         type: choice
         options:
           - debug
           - release
 
-  push:
-    branches: [ main ]
-
 jobs:
   build:
-    runs-on: ubuntu-22.04
-
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download Chinese font
-        run: |
-          mkdir -p fonts
-          # 安装 Noto CJK 字体包
-          sudo apt-get update
-          sudo apt-get install -y fonts-noto-cjk
-          # 复制系统字体到项目目录
-          cp /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc fonts/NotoSansSC-Regular.ttf || \
-          cp /usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc fonts/NotoSansSC-Regular.ttf || \
-          find /usr/share/fonts -name "*NotoSans*CJK*.ttc" -o -name "*NotoSans*SC*.otf" | head -1 | xargs -I {} cp {} fonts/NotoSansSC-Regular.ttf
-          ls -la fonts/
-
-      - name: Generate signing key (for release)
-        if: ${{ github.event.inputs.build_type == 'release' || github.event_name == 'push' }}
-        run: |
-          keytool -genkey -v \
-            -keystore release.keystore \
-            -alias release \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass 123456 \
-            -keypass 123456 \
-            -dname "CN=Jay, OU=Dev, O=Jay, L=City, ST=State, C=CN"
-
-          sed -i 's/# android.keystore = release.keystore/android.keystore = release.keystore/' buildozer.spec
-          sed -i 's/# android.keyalias = release/android.keyalias = release/' buildozer.spec
-          sed -i 's/# android.keystore_password = 123456/android.keystore_password = 123456/' buildozer.spec
-          sed -i 's/# android.keyalias_password = 123456/android.keyalias_password = 123456/' buildozer.spec
-
-      - name: Build with Buildozer Docker
-        run: |
-          BUILD_TYPE=${{ github.event.inputs.build_type || 'release' }}
-          echo "Building $BUILD_TYPE APK..."
-
-          # 直接构建（GitHub Actions每次都是全新环境，不需要clean）
-          docker run --rm \
-            --entrypoint="" \
-            -v "$(pwd)":/home/user/hostcwd \
-            -w /home/user/hostcwd \
-            kivy/buildozer:latest \
-            buildozer android $BUILD_TYPE
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: calculator-apk-${{ github.event.inputs.build_type || 'release' }}
-          path: bin/*
-          retention-days: 90
-
-      - name: Build summary
-        run: |
-          echo "=== Build Complete ==="
-          ls -lh bin/ || echo "No files found"
-          echo ""
-          echo "App Info:"
-          echo "  Name: 示例计算器应用"
-          echo "  Package: com.jay.python2apkexample"
+    - name: 检出代码
+      uses: actions/checkout@v4
+    - name: 安装系统依赖
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
+    - name: 安装 Buildozer
+      run: |
+        pip3 install --upgrade pip
+        pip3 install buildozer cython
+    - name: 下载中文字体
+      run: |
+        mkdir -p fonts
+        cd fonts
+        wget -O NotoSansCJK-Regular.ttf https://github.com/googlefonts/noto-cjk/raw/main/Sans/SubsetOTF/NotoSansCJK-Regular.ttf || true
+    - name: 构建 APK
+      run: |
+        buildozer android ${{ github.event.inputs.build_type || 'debug' }} --verbose
+    - name: 上传 APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: zodiac-register-apk-${{ github.event.inputs.build_type || 'debug' }}
+        path: bin/*.apk
+        retention-days: 30
