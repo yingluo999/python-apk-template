@@ -37,10 +37,8 @@ jobs:
         pip3 install --upgrade pip
         pip3 install buildozer cython
 
-    - name: 初始化 Buildozer（接受许可证）
+    - name: 接受 SDK 许可证
       run: |
-        buildozer init
-        # 创建虚拟的 license 接受文件
         mkdir -p ~/.android
         echo "### User Sources for Android SDK Manager" > ~/.android/repositories.cfg
         yes | sdkmanager --licenses || true
