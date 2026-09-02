@@ -4,15 +4,6 @@ on:
   push:
     branches: [ main ]
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: '构建类型'
-        required: true
-        default: 'debug'
-        type: choice
-        options:
-          - debug
-          - release
 
 jobs:
   build:
@@ -22,35 +13,17 @@ jobs:
     - name: 检出代码
       uses: actions/checkout@v4
 
-    - name: 安装系统依赖
+    - name: 使用 Docker 构建 APK
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          git zip unzip openjdk-17-jdk \
-          python3-pip autoconf libtool \
-          pkg-config zlib1g-dev \
-          libncurses5-dev libncursesw5-dev \
-          cmake libffi-dev libssl-dev
-
-    - name: 安装 Buildozer
-      run: |
-        pip3 install --upgrade pip
-        pip3 install buildozer cython
-
-    - name: 接受所有 SDK 许可证
-      run: |
-        mkdir -p ~/.android
-        echo "### User Sources for Android SDK Manager" > ~/.android/repositories.cfg
-        echo "y" | sdkmanager --licenses --sdk_root=/home/runner/.buildozer/android/platform/android-sdk || true
-        echo "y" | sdkmanager "build-tools;30.0.3" "platforms;android-30" || true
-
-    - name: 构建 APK
-      run: |
-        buildozer android ${{ github.event.inputs.build_type || 'debug' }} --verbose
+        docker run --rm \
+          -v $(pwd):/app \
+          -w /app \
+          kivy/buildozer:latest \
+          buildozer android debug
 
     - name: 上传 APK
       uses: actions/upload-artifact@v4
       with:
-        name: zodiac-register-apk-${{ github.event.inputs.build_type || 'debug' }}
+        name: zodiac-register-apk
         path: bin/*.apk
         retention-days: 30
