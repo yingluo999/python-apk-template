@@ -7,35 +7,32 @@ title = 十二生肖注册
 package.name = zodiacregister
 package.domain = com.qiqi
 
-# 版本
-version = 1.0.0
-version.code = 1
-
-# 源码目录
+# 源代码目录
 source.dir = .
-source.include_exts = py,json,txt
+source.include_exts = py,png,jpg,kv,atlas,json,txt,ttf
 
-# 主入口文件
-main.py = main.py
+# 版本号
+version = 1.0.0
 
-# 依赖
-requirements = python3,kivy,requests
+# 依赖 (Kivy 是必须的)
+requirements = python3,kivy,requests,urllib3,certifi,charset-normalizer,idna
 
 # Android 配置
-android.permissions = INTERNET
-android.api = 30
+android.permissions = android.permission.INTERNET, android.permission.WRITE_EXTERNAL_STORAGE, android.permission.READ_EXTERNAL_STORAGE, android.permission.MANAGE_EXTERNAL_STORAGE, android.permission.READ_MEDIA_IMAGES, android.permission.READ_MEDIA_VIDEO, android.permission.READ_MEDIA_AUDIO
+android.api = 33
 android.minapi = 21
 android.ndk = 25b
-android.archs = arm64-v8a
+android.archs = arm64-v8a, armeabi-v7a
 
 # 屏幕方向
 orientation = portrait
 fullscreen = 0
 
-# 关键：接受 SDK 许可证
+# Android 特定
 android.accept_sdk_license = True
-android.encoding = utf-8
+android.manifest.application.android:requestLegacyExternalStorage = true
+android.release_artifact = apk
 
 [buildozer]
-warn_on_root = 0
 log_level = 2
+warn_on_root = 0
